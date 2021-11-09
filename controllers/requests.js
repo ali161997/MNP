@@ -1,31 +1,11 @@
 const db = require('../models');
 const schedule = require('node-schedule');
 const State = require('../model/request_state')
+const { Op } = require('sequelize')
+const { StatusCodes } = require('http-status-codes');
 
-const { StatusCodes, } = require('http-status-codes')
-
-
-
-const updateTimeOut = async (phone) => {
-    try {
-        await db.requests.update(
-            {
-                state: State.Canceled
-            },
-            {
-                where: {
-                    phone
-                }
-            }
-        )
-    } catch (error) {
-        console.error(error.message)
-    }
-
-}
-
-const scheduleTimeOut = (phone) => {
-    const minutesToAdd = 2;
+const scheduleTimeOut = async (phone) => {
+    const minutesToAdd = 1;
     const futureDate = new Date(new Date().getTime() + minutesToAdd * 60000);
     schedule.scheduleJob(futureDate, async () => {
         const request = await db.requests.findOne({
@@ -35,7 +15,16 @@ const scheduleTimeOut = (phone) => {
         //handle state of request a
         switch (request.state) {
             case State.Pending:
-                updateTimeOut(phone)
+                await db.requests.update(
+                    {
+                        state: State.Canceled
+                    },
+                    {
+                        where: {
+                            phone
+                        }
+                    }
+                )
                 break;
             case State.Canceled:
                 console.log('Cannot Update ,timeOut!');
@@ -50,24 +39,83 @@ const scheduleTimeOut = (phone) => {
     })
 }
 
+const ifExistPendingRequestForPhone = async (phone) => {
+    return await db.requests.findOne(
+        {
+            where:
+            {
+                phone, state: State.Pending
+            }
+        });
+}
 
-exports.getAll = (req, res) => {
-    db.requests.findAll().then(requests => {
-        res.send(requests);
-    })
-    console.log('in all');
+
+exports.getAll = async (req, res) => {
+    try {
+        const requests = await db.requests.findAll({
+            where: {
+                state: State.Accepted,
+                donor: {
+                    [Op.ne]: req.headers.organization,
+                },
+                organization: {
+                    [Op.ne]: req.headers.organization
+                }
+
+
+
+            }
+        });
+        if (!requests)
+            res.status(StatusCodes.NOT_FOUND).send()
+        else
+            res.status(StatusCodes.OK).send(requests);
+    } catch (e) {
+        console.log(e.message)
+    }
 };
+
+
+exports.allPending = async (req, res) => {
+    try {
+        const requests = await db.requests.findAll({
+            where: {
+                state: State.Pending,
+                organization: req.headers.organization
+            }
+
+        });
+        if (!requests)
+            res.status(StatusCodes.NOT_FOUND).send()
+        else
+            res.status(StatusCodes.OK).send(requests);
+    } catch (e) {
+        console.log(e.message)
+    }
+}
 
 exports.porting = async (req, res) => {
     try {
-        const submittedRequested = await db.requests.create({
-            organization: req.headers.organization,
-            phone: req.body.phone,
-            state: State.Pending,
-            donor: req.body.donor,
-        });
-        scheduleTimeOut(submittedRequested.phone);
-        res.status(StatusCodes.CREATED).send(submittedRequested);
+
+        if (req.body.phone.length !== 11) {
+            res.status(StatusCodes.BAD_REQUEST).send('invalid request')
+            return;
+
+        }
+        console.log('after statement');
+        const requestPending = await ifExistPendingRequestForPhone(req.body.phone)
+        if (!requestPending) {
+            const submittedRequested = await db.requests.create({
+                organization: req.headers.organization,
+                phone: req.body.phone,
+                state: State.Pending,
+                donor: req.body.donor,
+            });
+            await scheduleTimeOut(submittedRequested.phone);
+            res.status(StatusCodes.CREATED).send(submittedRequested);
+        }
+        else
+            res.status(StatusCodes.FORBIDDEN).send('request pending exist');
 
     } catch (error) {
         console.error(error);
@@ -78,7 +126,15 @@ exports.porting = async (req, res) => {
 
 exports.getRequestByPhone = async (req, res) => {
     try {
-        const request = await db.requests.findOne({ where: { phone: req.params.phone } });
+        const request = await db.requests.findOne(
+            {
+                where:
+                {
+                    [Op.or]: [{ donor: req.body.donor }, { organization: req.headers.organization }],
+                    phone: req.params.phone,
+                    state: State.Pending
+                }
+            });
         if (!request) {
             res.status(StatusCodes.NOT_FOUND).send(`Not found!`);
             return;
@@ -122,16 +178,40 @@ exports.updateRequestByPhone = async (req, res) => {
                 },
                 {
                     where: {
-                        phone: req.params.phone
+                        phone: request.phone
                     }
                 }
             )
-            res.status(StatusCodes.BAD_REQUEST).send('cannot update')
+            res.status(StatusCodes.OK).send('success!')
         }
         else {
-            res.status(StatusCodes.BAD_REQUEST).send(e.message)
+            res.status(StatusCodes.BAD_REQUEST).send('not valid to update')
         }
     } catch (e) {
         res.status(StatusCodes.BAD_REQUEST).send(e.message)
+    }
+}
+
+exports.getCurrentPhoneStatus = async (req, res) => {
+    try {
+        const request = await db.requests.findOne(
+            {
+                where:
+                {
+                    state: State.Accepted,
+                    phone: req.params.phone,
+                }
+            });
+        if (!request) {
+            res.status(StatusCodes.NOT_FOUND).send(`Not found!`);
+            return;
+        }
+        res.status(StatusCodes.OK).send({
+            state: "ported",
+            holder: request.organization
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(StatusCodes.BAD_REQUEST).send(`${error.message}`)
     }
 }
