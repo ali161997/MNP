@@ -137,11 +137,11 @@ exports.getRequestByPhone = async (req, res) => {
 }
 
 exports.deleteRequestByPhone = async (req, res) => {
-    console.log(req.params.phone)
     try {
         await db.requests.destroy({
             where: {
-                phone: req.params.phone
+                phone: req.params.phone,
+                organization: req.headers.organization
             }
 
         })
