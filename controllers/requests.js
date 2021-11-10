@@ -4,6 +4,7 @@ const State = require('../model/request_state')
 const { Op } = require('sequelize')
 const { StatusCodes } = require('http-status-codes');
 
+//background task that cancels all pending requests that exceed X 
 const scheduleTimeOut = async (phone) => {
     const minutesToAdd = 1;
     const futureDate = new Date(new Date().getTime() + minutesToAdd * 60000);
@@ -49,21 +50,11 @@ const ifExistPendingRequestForPhone = async (phone) => {
         });
 }
 
-
-exports.getAll = async (req, res) => {
+exports.allAccepted = async (req, res) => {
     try {
         const requests = await db.requests.findAll({
             where: {
-                state: State.Accepted,
-                donor: {
-                    [Op.ne]: req.headers.organization,
-                },
-                organization: {
-                    [Op.ne]: req.headers.organization
-                }
-
-
-
+                state: State.Accepted
             }
         });
         if (!requests)
@@ -74,7 +65,6 @@ exports.getAll = async (req, res) => {
         console.log(e.message)
     }
 };
-
 
 exports.allPending = async (req, res) => {
     try {
@@ -160,6 +150,7 @@ exports.deleteRequestByPhone = async (req, res) => {
         res.status(StatusCodes.BAD_REQUEST).send(error.message)
     }
 }
+
 
 exports.updateRequestByPhone = async (req, res) => {
     try {

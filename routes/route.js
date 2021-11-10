@@ -4,7 +4,7 @@ const auth = require('../controllers/auth')
 const requestController = require('../controllers/requests');
 
 //operator is NOT a recipient or donor so he can view the accepted requests
-router.get('/all', auth, requestController.getAll)
+router.get('/accepted', auth, requestController.allAccepted)
 
 // operator is a recipient or donor so he can view the request
 router.get('/allPending', auth, requestController.allPending)
@@ -19,12 +19,11 @@ router.get('/:phone', auth, requestController.getRequestByPhone)
 router.delete('/:phone', auth, requestController.deleteRequestByPhone)
 
 
-//update request from donor only
+//Only the donor can accept or reject the porting request
 router.put('/:phone', auth, requestController.updateRequestByPhone)
 
 
-//get the current phone number status and its network holder
-
+//operator agent should be able to get the current phone number status
 router.get('/status/:phone', auth, requestController.getCurrentPhoneStatus)
 
 
